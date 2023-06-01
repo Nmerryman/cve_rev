@@ -47,7 +47,7 @@ proc extract_keywords(text: Cve): seq[seq[string]] =
     while i < vals.len:
         while i < vals.len:
             # if first char is upper case, (not start of sentence), it's probably a nown
-            if vals[i][0].isUpperAscii and not s_start:
+            if vals[i].len < 1 or vals[i][0].isUpperAscii and not s_start:
                 break
 
             # will next word be a start
