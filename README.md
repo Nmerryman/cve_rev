@@ -1,0 +1,1 @@
+My goal of this project is simply to help automate matching any input cve to any cwe. For now we won't do any tree traversal to find one that lands in view 699.
