@@ -37,6 +37,7 @@ proc extract_keywords(text: Cve): seq[seq[string]] =
     # Some (growing) criteria to check words against
     let blacklist_common = toHashSet(["a", "and", "as", "in", "to", "or", "of", "via", "used", "before",
     "after", "cause", "allows", "do", "when", "the", "has", "been", "which", "that", "from", "an"])
+    let whitelist_names = toHashSet(["SQL", "PHP"])
     let remove_chars = {'(', ')', '"', ',', '.'}
 
     var temp: seq[string]
@@ -46,8 +47,8 @@ proc extract_keywords(text: Cve): seq[seq[string]] =
     # Double loop so we can nest sequences
     while i < vals.len:
         while i < vals.len:
-            # if first char is upper case, (not start of sentence), it's probably a nown
-            if vals[i].len < 1 or vals[i][0].isUpperAscii and not s_start:
+            # if first char is upper case, (not start of sentence), it's probably a nown we don't want
+            if vals[i].len < 1 or vals[i][0].isUpperAscii and not s_start and vals[i] notin whitelist_names:
                 break
 
             # will next word be a start
@@ -102,13 +103,14 @@ proc perform_search(query: string): seq[Cwe] =
 
     # This base request simply needs to be updated when the token expires
     # Maybe add a way to set this dynamically from the command line?
-    var base_request = "https://cse.google.com/cse/element/v1?rsz=filtered_cse&num=10&hl=en&source=gcsc&gss=.com&cselibv=8e77c7877b8339e2&cx=012899561505164599335%3Atb0er0xsk_o&q=test_asdf&safe=off&cse_tok=AFW0emw-cDjP0r_IoYBy22b-oq-s%3A1685565480543&exp=csqr%2Ccc%2Cbf&oq=test_asdf&gs_l=partner-generic.3...856269.858334.4.858558.0.0.0.0.0.0.0.0..0.0.csems%2Cnrl%3D10...0....1.34.partner-generic..0.0.0.&callback=google.search.cse.api6724"
+    # Maybe I should add headers?
+    var base_request = "https://cse.google.com/cse/element/v1?rsz=filtered_cse&num=10&hl=en&source=gcsc&gss=.com&cselibv=ffd60a64b75d4cdb&cx=012899561505164599335%3Atb0er0xsk_o&q=test_asdf&safe=off&cse_tok=AFW0emzSnF4ibAKkW1ENH81HuIh1%3A1686115077002&exp=csqr%2Ccc%2Cbf&oq=test_asdf&gs_l=partner-generic.12...0.0.1.7403.0.0.0.0.0.0.0.0..0.0.csems%2Cnrl%3D10...0.....34.partner-generic..0.0.0.&callback=google.search.cse.api3242"
     var query_prepared = query.replace(' ', '+')
     var raw_request = base_request.replace("test_asdf", query_prepared)
     var client = newHttpClient()
     var response = client.getContent(raw_request)
     # debug
-    # writeFile("google.html", response)
+    writeFile("google.html", response)
 
     # Remove all js function calls until we only have a json object
     var start = 0
@@ -164,7 +166,7 @@ proc update_data(cve: Cve, cwe: Cwe) =
     temp_out = pretty(%*(data))
     writeFile("mapping.json", temp_out )
 
-proc test =
+proc test_sys =
     ## Test the system with no user input
     var cve = "CVE-2010-3257"
     var desc = get_cve_info(cve)
@@ -205,12 +207,20 @@ proc main() =
                 var search_res = perform_search(query_prep)
                 var chosen = select_cwe(search_res)
                 update_data(cve, chosen)
-                echo "Saved Cve -> Cwe mapping"
+                echo "Saved Cve (", cve.id, ") -> Cwe mapping"
                 break
-            except ChangeQuery:
+            except ChangeQuery as e:
+                echo "debug changing: ", e.msg
                 continue
+            except Exception as e:
+                raise e
+
+proc cve_rev(test=false) =
+    if test:
+        test_sys()
+    else:
+        main()
 
 
-if isMainModule:
-    main()
-    # test()
+import cligen
+dispatch cve_rev
