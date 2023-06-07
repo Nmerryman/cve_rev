@@ -1,7 +1,11 @@
-import std/[httpclient, strutils, json, sets, re, sequtils, strscans, os]
+{.experimental: "codeReordering".}
+import std/[httpclient, strutils, json, sets, re, sequtils, strscans, os, parseutils]
 
 # Types needed for collecting data
 type
+    Cli_Cve = object
+        base: string
+        num: int
     Cve = object
         id: string
         description: string
@@ -17,6 +21,11 @@ type
         data: seq[Cve_to_Cwe]
     ChangeQuery = ref CatchableError
 
+# Globals
+var DEBUG = false
+var OUTPUT_FILE = "mapping.json"
+var SMART = false
+
 proc get_cve_info(cve_val: string): Cve =
     ## Get basic CVE info based on the id
     
@@ -24,7 +33,8 @@ proc get_cve_info(cve_val: string): Cve =
     let client = newHttpClient()
     let response = client.getContent("https://cveawg.mitre.org/api/cve/" & cve_val)
     # debug
-    # writeFile("cve.html", response)
+    if DEBUG:
+        writeFile("cve.html", response)
 
     # Parse and generate Cve storage object
     let json_obj = parseJson(response)
@@ -110,7 +120,8 @@ proc perform_search(query: string): seq[Cwe] =
     var client = newHttpClient()
     var response = client.getContent(raw_request)
     # debug
-    writeFile("google.html", response)
+    if DEBUG:
+        writeFile("google_response.html", response)
 
     # Remove all js function calls until we only have a json object
     var start = 0
@@ -152,10 +163,15 @@ proc select_cwe(opts: seq[Cwe]): Cwe =
 proc update_data(cve: Cve, cwe: Cwe) =
     ## Store the decision in a local file but try to be context aware
 
+    # Get global value
+    let out_file = OUTPUT_FILE
+    if DEBUG:
+        echo "OUTPUT_FILE IS -> ", out_file
+
     # Create file if it doesn't already exist
     var data: Data_collection
-    if fileExists("mapping.json"): 
-       data = to(parseFile("mapping.json"), Data_collection)
+    if fileExists(out_file): 
+       data = to(parseFile(out_file), Data_collection)
     
     # Add run to collection
     data.data.add(Cve_to_Cwe(cve: cve, cwe: cwe))
@@ -164,7 +180,7 @@ proc update_data(cve: Cve, cwe: Cwe) =
     # Store the data again
     # Use toUgly in the future for speed
     temp_out = pretty(%*(data))
-    writeFile("mapping.json", temp_out )
+    writeFile(out_file, temp_out )
 
 proc test_sys =
     ## Test the system with no user input
@@ -185,42 +201,81 @@ proc test_sys =
     echo "Chosen CWE-", chosen_cve.id, ", saving now."
     update_data(desc, chosen_cve)
     
+proc request_cve_id(): Cli_Cve =
+    echo "What is the CVE number"
+    var cid_raw = stdin.readLine()
+    return parse_raw_cve(cid_raw)
 
-proc main() =
-    # Another loop so I can do multiple iterations
+proc parse_raw_cve(val: string): Cli_Cve =
+    let parts = val.split("-")
+    result.base = parts[0..^2].join("-")
+    result.num = parseint(parts[^1])
+
+proc format_raw_cve(val: Cli_Cve): string =
+    return val.base & "-" & $val.num    
+
+proc next_raw_cve(val: var Cli_Cve): var Cli_Cve =
+    result = val
+    val.num += 1
+
+proc do_cve(raw_cve: Cli_Cve) =
     while true:
-        echo "What is the CVE number"
-        var cid_raw = stdin.readLine()
-        while true:
-            try:
-                var cve = get_cve_info(cid_raw)
-                var parts = extract_keywords(cve)
-                for i in 0..parts.high:
-                    echo i, ": ", parts[i].join(" ")
-                echo "Number to craft query (space delimited for multiple), c for custom, f to print full description"
-                var query_opts = stdin.readLine()
-                if query_opts == "f":
-                    echo cve.description
-                    continue
-                var query_prep = gen_query(parts, query_opts)
-                echo "Trying: ", query_prep
-                var search_res = perform_search(query_prep)
-                var chosen = select_cwe(search_res)
-                update_data(cve, chosen)
-                echo "Saved Cve (", cve.id, ") -> Cwe mapping"
-                break
-            except ChangeQuery as e:
-                echo "debug changing: ", e.msg
+        try:
+            var cve = get_cve_info(raw_cve.format_raw_cve)
+            var parts = extract_keywords(cve)
+            for i in 0..parts.high:
+                echo i, ": ", parts[i].join(" ")
+            echo "Number to craft query (space delimited for multiple), c for custom, f to print full description"
+            var query_opts = stdin.readLine()
+            if query_opts == "f":
+                echo cve.description
                 continue
-            except Exception as e:
-                raise e
+            var query_prep = gen_query(parts, query_opts)
+            echo "Trying: ", query_prep
+            var search_res = perform_search(query_prep)
+            var chosen = select_cwe(search_res)
+            update_data(cve, chosen)
+            echo "Saved Cve (", cve.id, ") -> Cwe mapping"
+            break
+        except ChangeQuery as e:
+            echo "debug changing: ", e.msg
+            continue
+        except Exception as e:
+            raise e
 
-proc cve_rev(test=false) =
+proc cve_rev(test=false, debug=false, iterations=1, cve="", autoincrement=false, output="mapping.json", smart=false) =
+    ## test = Perform test run
+    ## debug = Print out debug info and save http results
+    ## iterations = How often to run program. -1 for forever
+    ## cve = Choose cve from cli
+    ## autoincrement = Auto increment the cve value and bypass asking for next
+    
+    DEBUG = debug
+    OUTPUT_FILE = output
+    SMART = smart
     if test:
         test_sys()
     else:
-        main()
-
+        # Set initial cve
+        var chosen_cve: Cli_Cve
+        if cve == "":
+            chosen_cve = request_cve_id()
+        else:
+            chosen_cve = parse_raw_cve(cve)
+        if iterations == -1:  # Loop forever
+            while true:
+                do_cve(chosen_cve)
+                if autoincrement:
+                    chosen_cve.num += 1
+                else:
+                    chosen_cve = request_cve_id()
+        else:
+            for a in 0 ..< iterations:
+                do_cve(chosen_cve)
+                if autoincrement:
+                    chosen_cve.num += 1
+                else:
+                    chosen_cve = request_cve_id()
 
 import cligen
 dispatch cve_rev
