@@ -1,5 +1,6 @@
 {.experimental: "codeReordering".}
 import std/[httpclient, strutils, json, sets, re, sequtils, strscans, os, parseutils]
+import cwe_parse
 
 # Types needed for collecting data
 type
@@ -218,22 +219,53 @@ proc next_raw_cve(val: var Cli_Cve): var Cli_Cve =
     result = val
     val.num += 1
 
+proc smart_query(vals: seq[seq[string]]): string =
+    let high_imp = @["Uhh temp"]
+    let med_imp  = @["buffer overflow", "long string"]
+    let low_imp  = @["gain privleges"]
+    let word_lists = [high_imp, med_imp, low_imp]
+    var desperation = 1
+    
+    var passed: seq[string]
+    for a in vals:
+        let test = a.join(" ").toLowerAscii
+        for b in 0 .. desperation:
+            for c in word_lists[b]:
+                let loc = test.find(c)
+                if loc != -1:
+                    passed.add(test)
+    return passed.join(" ")
+
+
+
 proc do_cve(raw_cve: Cli_Cve) =
     while true:
         try:
             var cve = get_cve_info(raw_cve.format_raw_cve)
             var parts = extract_keywords(cve)
-            for i in 0..parts.high:
-                echo i, ": ", parts[i].join(" ")
-            echo "Number to craft query (space delimited for multiple), c for custom, f to print full description"
-            var query_opts = stdin.readLine()
-            if query_opts == "f":
-                echo cve.description
-                continue
-            var query_prep = gen_query(parts, query_opts)
-            echo "Trying: ", query_prep
+
+            var query_prep: string
+            if SMART:
+                query_prep = smart_query(parts)
+                echo "Trying: ", query_prep
+            else:
+                for i in 0..parts.high:
+                    echo i, ": ", parts[i].join(" ")
+                echo "Number to craft query (space delimited for multiple), c for custom, f to print full description"
+                var query_opts = stdin.readLine()
+                if query_opts == "f":
+                    echo cve.description
+                    continue
+                query_prep = gen_query(parts, query_opts)
+                echo "Trying: ", query_prep
             var search_res = perform_search(query_prep)
-            var chosen = select_cwe(search_res)
+
+            var chosen: Cwe
+            if SMART:
+                chosen = search_res[0]
+            else:
+                chosen = select_cwe(search_res)
+
             update_data(cve, chosen)
             echo "Saved Cve (", cve.id, ") -> Cwe mapping"
             break
