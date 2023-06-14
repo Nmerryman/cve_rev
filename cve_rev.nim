@@ -1,6 +1,7 @@
 {.experimental: "codeReordering".}
-import std/[httpclient, strutils, json, sets, re, sequtils, strscans, os, parseutils]
+import std/[httpclient, strutils, json, sets, re, sequtils, strscans, os, parseutils, tables, sugar]
 import cwe_parse
+import flatty
 
 # Types needed for collecting data
 type
@@ -21,6 +22,12 @@ type
     Data_collection = object
         data: seq[Cve_to_Cwe]
     ChangeQuery = ref CatchableError
+    Cached_weakness = object
+        name, description, extended_description: string
+        con_scope, con_impacts: seq[string]
+        con_note: string
+        alt_term, alt_desc: seq[string]
+
 
 # Globals
 var DEBUG = false
@@ -275,6 +282,56 @@ proc do_cve(raw_cve: Cli_Cve) =
         except Exception as e:
             raise e
 
+proc load_cwe_words(file_name: string, cache_file="1000.cache"): Table[string, Cached_weakness] =
+    # Load the data for use (takes advantage of caching because parsing the original is a bit slow)
+    if not fileExists(cache_file):
+        # Generate the data 
+        let catalog = parse_catalog(file_name)
+        for a in catalog.weaknesses:
+            var temp_weakness = Cached_weakness(name: a.name, description: a.description, extended_description: a.extended_description)
+            for b in a.consequenses:
+                for c in b.impact:
+                    temp_weakness.con_impacts.add(c)
+                for c in b.scope:
+                    temp_weakness.con_scope.add(c)
+                if b.note != "":
+                    temp_weakness.con_note = b.note
+            for b in a.alternative_terms:
+                if b.term != "":
+                    temp_weakness.alt_term.add(b.term)
+                if b.description != "":
+                    temp_weakness.alt_desc.add(b.description)
+            result[a.id] = temp_weakness
+        let flat = toFlatty(result)
+        writeFile(cache_file, flat)
+    else:
+        result = fromFlatty(readFile(cache_file), result.typeof)
+
+
+proc score(text: seq[seq[string]], match: Cached_weakness): int =
+    # This puts all the words in one sequence
+    var prep: seq[string] = collect:
+        for a in text:
+            for b in a:
+                let temp = b.replace('-', ' ').replace('_', ' ')
+                for c in temp.split(' '):
+                    c
+
+    # Scoring impact
+    let name_s = 1
+    let description_s = 1
+    let extended_desc_s = 1
+    let con_scope_s = 1
+    let con_impact_s = 1
+    let con_note_s = 1
+    let alt_term_s = 1
+    let alt_desc_s = 1
+
+
+
+proc testing_main() =
+    discard load_cwe_words("1000.xml")
+
 proc cve_rev(test=false, debug=false, iterations=1, cve="", autoincrement=false, output="mapping.json", smart=false) =
     ## test = Perform test run
     ## debug = Print out debug info and save http results
@@ -310,4 +367,7 @@ proc cve_rev(test=false, debug=false, iterations=1, cve="", autoincrement=false,
                     chosen_cve = request_cve_id()
 
 import cligen
-dispatch cve_rev
+
+testing_main()
+
+# dispatch cve_rev

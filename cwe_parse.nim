@@ -33,9 +33,7 @@ type
         id*, name*, objective*: string
         members*: seq[Related_weakness]
 
-export Catalog
-
-proc parse_catalog(file_path: string): Catalog =
+proc parse_catalog*(file_path: string): Catalog =
     let thing = loadXml(file_path)
     let tview = thing.findAll("Views")[0].findAll("View")[0]
     let tvobjective = tview.findAll("Objective")[0]
@@ -106,12 +104,12 @@ proc parse_catalog(file_path: string): Catalog =
 
     result.weaknesses = weaknesses
 
-proc find(c: Catalog, id: string): Weakness =
+proc find*(c: Catalog, id: string): Weakness =
     for a in c.weaknesses:
         if id == a.id:
             return a
 
-proc find(c: Catalog, id: int): Weakness =
+proc find*(c: Catalog, id: int): Weakness =
     find(c, $id)
 
 proc main =
