@@ -1,11 +1,11 @@
 {.experimental: "codeReordering".}
-import std/[httpclient, strutils, json, sets, re, sequtils, strscans, os, parseutils, tables, sugar]
+import std/[httpclient, strutils, json, sets, re, sequtils, strscans, os, parseutils, tables, sugar, algorithm]
 import cwe_parse
 import flatty
 
 # Types needed for collecting data
 type
-    Cli_Cve = object
+    CliCve = object
         base: string
         num: int
     Cve = object
@@ -16,18 +16,18 @@ type
         name: string
         description: string
         link: string
-    Cve_to_Cwe = object
+    Cve2Cwe = object
         cve: Cve
         cwe: Cwe
-    Data_collection = object
-        data: seq[Cve_to_Cwe]
+    DataCollection = object
+        data: seq[Cve2Cwe]
     ChangeQuery = ref CatchableError
-    Cached_weakness = object
-        name, description, extended_description: string
+    CachedWeakness = object
+        id, name, description, extended_description: string
         con_scope, con_impacts: seq[string]
         con_note: string
         alt_term, alt_desc: seq[string]
-
+    ExtractedWords = seq[seq[string]]
 
 # Globals
 var DEBUG = false
@@ -48,9 +48,10 @@ proc get_cve_info(cve_val: string): Cve =
     let json_obj = parseJson(response)
     return Cve(id: cve_val, description: json_obj["containers"]["cna"]["descriptions"][0]["value"].getStr())
 
-proc extract_keywords(text: Cve): seq[seq[string]] =
+proc extract_keywords(text: Cve): ExtractedWords =
     ## Remove rarely important words and nouns that usually have nothing to do with the weakness itself
     ## Organized so that runs of big words are kept together
+    ## Basically this is a first round of preprocessing
     
     # Some (growing) criteria to check words against
     let blacklist_common = toHashSet(["a", "and", "as", "in", "to", "or", "of", "via", "used", "before",
@@ -99,7 +100,7 @@ proc extract_keywords(text: Cve): seq[seq[string]] =
     
     return result
 
-proc gen_query(data: seq[seq[string]], query_opts: string): string =
+proc gen_query_manual(data: ExtractedWords, query_opts: string): string =
     ## Turn input + keyword data into a human query
     
     var parts = query_opts.split()
@@ -116,7 +117,10 @@ proc gen_query(data: seq[seq[string]], query_opts: string): string =
 
     return result
 
-proc perform_search(query: string): seq[Cwe] =
+proc to_cwe(cwe: CachedWeakness): Cwe =
+    Cwe(id: cwe.id, name: cwe.name, description: cwe.description, link: "https://cwe.mitre.org/data/definitions/" & $cwe.id & ".html")
+
+proc perform_google_search(query: string): seq[Cwe] =
     ## Use the Google search engine on the CWE site to search for our key words
 
     # This base request simply needs to be updated when the token expires
@@ -155,6 +159,8 @@ proc perform_search(query: string): seq[Cwe] =
     
     return result
 
+proc perform_cache_search(query: string, cache: Table[string, CachedWeakness]): seq[Cwe] =
+
 proc select_cwe(opts: seq[Cwe]): Cwe =
     ## Display the sequence of Cwe objects and let the user select one of them
 
@@ -177,12 +183,12 @@ proc update_data(cve: Cve, cwe: Cwe) =
         echo "OUTPUT_FILE IS -> ", out_file
 
     # Create file if it doesn't already exist
-    var data: Data_collection
+    var data: DataCollection
     if fileExists(out_file): 
-       data = to(parseFile(out_file), Data_collection)
+       data = to(parseFile(out_file), DataCollection)
     
     # Add run to collection
-    data.data.add(Cve_to_Cwe(cve: cve, cwe: cwe))
+    data.data.add(Cve2Cwe(cve: cve, cwe: cwe))
     var temp_out: string
 
     # Store the data again
@@ -198,9 +204,9 @@ proc test_sys =
     var parts = desc.extract_keywords
     for i in 0..parts.high:
         echo i, ": ", parts[i].join(" ")
-    var genned = gen_query(parts, "0")
+    var genned = gen_query_manual(parts, "0")
     echo genned
-    var search_res = perform_search(genned)
+    var search_res = perform_google_search(genned)
     for a in search_res:
         echo a
     
@@ -209,24 +215,24 @@ proc test_sys =
     echo "Chosen CWE-", chosen_cve.id, ", saving now."
     update_data(desc, chosen_cve)
     
-proc request_cve_id(): Cli_Cve =
+proc request_cve_id(): CliCve =
     echo "What is the CVE number"
     var cid_raw = stdin.readLine()
     return parse_raw_cve(cid_raw)
 
-proc parse_raw_cve(val: string): Cli_Cve =
+proc parse_raw_cve(val: string): CliCve =
     let parts = val.split("-")
     result.base = parts[0..^2].join("-")
     result.num = parseint(parts[^1])
 
-proc format_raw_cve(val: Cli_Cve): string =
+proc format_raw_cve(val: CliCve): string =
     return val.base & "-" & $val.num    
 
-proc next_raw_cve(val: var Cli_Cve): var Cli_Cve =
+proc next_raw_cve(val: var CliCve): var CliCve =
     result = val
     val.num += 1
 
-proc smart_query(vals: seq[seq[string]]): string =
+proc smart_query(vals: ExtractedWords): string =
     let high_imp = @["Uhh temp"]
     let med_imp  = @["buffer overflow", "long string"]
     let low_imp  = @["gain privleges"]
@@ -243,9 +249,7 @@ proc smart_query(vals: seq[seq[string]]): string =
                     passed.add(test)
     return passed.join(" ")
 
-
-
-proc do_cve(raw_cve: Cli_Cve) =
+proc do_cve(raw_cve: CliCve) =
     while true:
         try:
             var cve = get_cve_info(raw_cve.format_raw_cve)
@@ -263,9 +267,9 @@ proc do_cve(raw_cve: Cli_Cve) =
                 if query_opts == "f":
                     echo cve.description
                     continue
-                query_prep = gen_query(parts, query_opts)
+                query_prep = gen_query_manual(parts, query_opts)
                 echo "Trying: ", query_prep
-            var search_res = perform_search(query_prep)
+            var search_res = perform_google_search(query_prep)
 
             var chosen: Cwe
             if SMART:
@@ -282,13 +286,13 @@ proc do_cve(raw_cve: Cli_Cve) =
         except Exception as e:
             raise e
 
-proc load_cwe_words(file_name: string, cache_file="1000.cache"): Table[string, Cached_weakness] =
-    # Load the data for use (takes advantage of caching because parsing the original is a bit slow)
+proc load_cwe_words(file_name: string, cache_file="1000.cache"): Table[string, CachedWeakness] =
+    ## Load the data for use (takes advantage of caching because parsing the original is a bit slow)
     if not fileExists(cache_file):
         # Generate the data 
         let catalog = parse_catalog(file_name)
         for a in catalog.weaknesses:
-            var temp_weakness = Cached_weakness(name: a.name, description: a.description, extended_description: a.extended_description)
+            var temp_weakness = CachedWeakness(id: a.id, name: a.name, description: a.description, extended_description: a.extended_description)
             for b in a.consequenses:
                 for c in b.impact:
                     temp_weakness.con_impacts.add(c)
@@ -307,8 +311,7 @@ proc load_cwe_words(file_name: string, cache_file="1000.cache"): Table[string, C
     else:
         result = fromFlatty(readFile(cache_file), result.typeof)
 
-
-proc score(text: seq[seq[string]], match: Cached_weakness): int =
+proc score(text: ExtractedWords, match: CachedWeakness): int =
     # This puts all the words in one sequence
     var prep: seq[string] = collect:
         for a in text:
@@ -318,19 +321,46 @@ proc score(text: seq[seq[string]], match: Cached_weakness): int =
                     c
 
     # Scoring impact
-    let name_s = 1
-    let description_s = 1
+    let name_s = 3
+    let description_s = 2
     let extended_desc_s = 1
     let con_scope_s = 1
     let con_impact_s = 1
     let con_note_s = 1
     let alt_term_s = 1
     let alt_desc_s = 1
+    for a in prep:
+        if a in match.name:
+            result += name_s
+        elif a in match.description:
+            result += description_s
+        elif a in match.extended_description:
+            result += extended_desc_s
 
+proc score_matches(words: ExtractedWords, cache: Table[string, CachedWeakness]): Table[string, int] =
+    for k, v in cache:
+        result[k] = score(words, v)
 
+proc score_top_matches(words: ExtractedWords, cache: Table[string, CachedWeakness], limit=3): seq[(string, int)] =
+    result.setLen(limit)
+    var vals = score_matches(words, cache)
+    for k, v in vals:
+        block result_iter:
+            for a in result.mitems:
+                if v > a[1]:
+                    a = (k, v)
+                    break result_iter
+    
+    result = result.sortedByIt(it[1])
 
 proc testing_main() =
-    discard load_cwe_words("1000.xml")
+    var cache = load_cwe_words("1000.xml")
+    var raw_cve = request_cve_id()
+    var cve = get_cve_info(raw_cve.format_raw_cve)
+    var extracted = extract_keywords(cve)
+    for a in score_top_matches(extracted, cache):
+        echo "[", a[0], "->", a[1], "]: ", cache[a[0]].name
+
 
 proc cve_rev(test=false, debug=false, iterations=1, cve="", autoincrement=false, output="mapping.json", smart=false) =
     ## test = Perform test run
@@ -346,7 +376,7 @@ proc cve_rev(test=false, debug=false, iterations=1, cve="", autoincrement=false,
         test_sys()
     else:
         # Set initial cve
-        var chosen_cve: Cli_Cve
+        var chosen_cve: CliCve
         if cve == "":
             chosen_cve = request_cve_id()
         else:
