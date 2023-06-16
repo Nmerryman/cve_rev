@@ -91,7 +91,7 @@ proc extract_keywords*(text: Cve): ExtractedWords =
                 break
 
             # Part of running sequence
-            temp.add(vals[i])
+            temp.add(vals[i].toLowerAscii)
             i += 1
 
         i += 1
@@ -221,13 +221,16 @@ proc load_cwe_words*(file_name: string, cache_file="1000.cache"): Table[string, 
         result = fromFlatty(readFile(cache_file), result.typeof)
 
 proc score*(text: ExtractedWords, match: CachedWeakness): int =
+    ## Basic matching/scoring function that tries to find number of usefull matches.
+    ## I should probably move the .toLowerAscii calls to the cache storage instead
+    ## 
     # This puts all the words in one sequence
     var prep: seq[string] = collect:
         for a in text:
             for b in a:
                 let temp = b.replace('-', ' ').replace('_', ' ')
                 for c in temp.split(' '):
-                    c
+                    c.toLowerAscii
     if DEBUG and ("score temp" notin DEBUG_STATE):
         echo prep
         DEBUG_STATE.add("score temp")
@@ -243,11 +246,11 @@ proc score*(text: ExtractedWords, match: CachedWeakness): int =
     let alt_term_s = 1
     let alt_desc_s = 1
     for a in prep:
-        if a in match.name:
+        if a in match.name.toLowerAscii:
             result += name_s
-        elif a in match.description:
+        elif a in match.description.toLowerAscii:
             result += description_s
-        elif a in match.extended_description:
+        elif a in match.extended_description.toLowerAscii:
             result += extended_desc_s
 
 proc score_matches*(words: ExtractedWords, cache: Table[string, CachedWeakness]): Table[string, int] =

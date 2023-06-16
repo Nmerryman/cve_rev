@@ -18,25 +18,24 @@ proc gen_query_manual(data: ExtractedWords, query_opts: string): string =
 
     return result
 
-proc perform_cache_search(query: string, cache: Table[string, CachedWeakness]): seq[Cwe] =
-    let res = score_top_matches(ExtractedWords(@[@[query]]), cache, 5)
-    for a in res:
-        result.add(cache[a[0]].to_cwe)
-    reverse(result)
+proc perform_cache_search(query: string, cache: Table[string, CachedWeakness]): seq[(string, int)] =
+    score_top_matches(ExtractedWords(@[@[query]]), cache, 5).reversed()
 
 
-proc select_cwe(opts: seq[Cwe]): Cwe =
+
+proc select_cwe(opts: seq[(string, int)], cache: Table[string, CachedWeakness]): Cwe =
     ## Display the sequence of Cwe objects and let the user select one of them
 
     echo "Select one of the following, c to change query"
     for i in 0 .. opts.high:
-        echo i, ": ", opts[i].name
-        echo "\t", opts[i].description
+        let weakness = cache[opts[i][0]]
+        echo i, " {s=", opts[i][1], "}: ", weakness.name
+        echo "   ", weakness.description
     var input = stdin.readLine()
     # By using an exception here we can catch easily catch it outside of this function
     if input == "c":
         raise ChangeQuery()
-    return opts[input.parseInt()]
+    return cache[opts[input.parseInt()][0]].to_cwe
 
 proc main =
     DEBUG = true
@@ -59,7 +58,7 @@ proc main =
     var cache = load_cwe_words("1000.xml")
     let query_prep = gen_query_manual(parts, query_ops)
     var search_res = perform_cache_search(query_prep, cache)
-    var chosen = select_cwe(search_res)
+    var chosen = select_cwe(search_res, cache)
     update_data(cve, chosen)
     echo "Saved Cve (", cve.id, ") -> Cwe mapping"
 
