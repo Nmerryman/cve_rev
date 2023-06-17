@@ -30,9 +30,8 @@ type
     ExtractedWords* = seq[seq[string]]
 
 # Globals
+var OUTPUT_FILE* = "cve_mapping.json"
 var DEBUG* = false
-var OUTPUT_FILE = "cve_mapping.json"
-var SMART = false
 var DEBUG_STATE: seq[string]
 
 proc get_cve_info*(cve_val: string): Cve =
@@ -125,25 +124,6 @@ proc update_data*(cve: Cve, cwe: Cwe) =
     # Use toUgly in the future for speed
     temp_out = pretty(%*(data))
     writeFile(out_file, temp_out )
-
-# proc test_sys =
-#     ## Test the system with no user input
-#     var cve = "CVE-2010-3257"
-#     var desc = get_cve_info(cve)
-#     echo desc
-#     var parts = desc.extract_keywords
-#     for i in 0..parts.high:
-#         echo i, ": ", parts[i].join(" ")
-#     var genned = gen_query_manual(parts, "0")
-#     echo genned
-#     var search_res = perform_google_search(genned)
-#     for a in search_res:
-#         echo a
-    
-#     # Selecting cwe
-#     var chosen_cve = search_res[0]
-#     echo "Chosen CWE-", chosen_cve.id, ", saving now."
-#     update_data(desc, chosen_cve)
     
 proc request_cve_id*(): CliCve =
     echo "What is the CVE number"
@@ -157,43 +137,6 @@ proc parse_raw_cve*(val: string): CliCve =
 
 proc format_raw_cve*(val: CliCve): string =
     return val.base & "-" & $val.num    
-
-# proc do_cve(raw_cve: CliCve) =
-#     while true:
-#         try:
-#             var cve = get_cve_info(raw_cve.format_raw_cve)
-#             var parts = extract_keywords(cve)
-
-#             var query_prep: string
-#             if SMART:
-#                 query_prep = smart_query(parts)
-#                 echo "Trying: ", query_prep
-#             else:
-#                 for i in 0..parts.high:
-#                     echo i, ": ", parts[i].join(" ")
-#                 echo "Number to craft query (space delimited for multiple), c for custom, f to print full description"
-#                 var query_opts = stdin.readLine()
-#                 if query_opts == "f":
-#                     echo cve.description
-#                     continue
-#                 query_prep = gen_query_manual(parts, query_opts)
-#                 echo "Trying: ", query_prep
-#             var search_res = perform_google_search(query_prep)
-
-#             var chosen: Cwe
-#             if SMART:
-#                 chosen = search_res[0]
-#             else:
-#                 chosen = select_cwe(search_res)
-
-#             update_data(cve, chosen)
-#             echo "Saved Cve (", cve.id, ") -> Cwe mapping"
-#             break
-#         except ChangeQuery as e:
-#             echo "debug changing: ", e.msg
-#             continue
-#         except Exception as e:
-#             raise e
 
 proc load_cwe_words*(file_name: string, cache_file="1000.cache"): Table[string, CachedWeakness] =
     ## Load the data for use (takes advantage of caching because parsing the original is a bit slow)
@@ -237,14 +180,14 @@ proc score*(text: ExtractedWords, match: CachedWeakness): int =
 
 
     # Scoring impact
-    let name_s = 3
-    let description_s = 2
-    let extended_desc_s = 1
+    let name_s = 7
+    let description_s = 4
+    let extended_desc_s = 2
     let con_scope_s = 1
     let con_impact_s = 1
     let con_note_s = 1
-    let alt_term_s = 1
-    let alt_desc_s = 1
+    let alt_term_s = 2
+    let alt_desc_s = 2
     for a in prep:
         if a in match.name.toLowerAscii:
             result += name_s
@@ -252,6 +195,16 @@ proc score*(text: ExtractedWords, match: CachedWeakness): int =
             result += description_s
         elif a in match.extended_description.toLowerAscii:
             result += extended_desc_s
+        elif a in match.con_scope.join.toLowerAscii:
+            result += con_scope_s
+        elif a in match.con_impacts.join.toLowerAscii:
+            result += con_impact_s
+        elif a in match.con_note.toLowerAscii:
+            result += con_note_s
+        elif a in match.alt_term.join.toLowerAscii:
+            result += alt_term_s
+        elif a in match.alt_desc.join.toLowerAscii:
+            result += alt_desc_s
 
 proc score_matches*(words: ExtractedWords, cache: Table[string, CachedWeakness]): Table[string, int] =
     for k, v in cache:

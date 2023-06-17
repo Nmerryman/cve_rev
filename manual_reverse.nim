@@ -19,9 +19,7 @@ proc gen_query_manual(data: ExtractedWords, query_opts: string): string =
     return result
 
 proc perform_cache_search(query: string, cache: Table[string, CachedWeakness]): seq[(string, int)] =
-    score_top_matches(ExtractedWords(@[@[query]]), cache, 5).reversed()
-
-
+    score_top_matches(ExtractedWords(@[@[query]]), cache, 6).reversed()
 
 proc select_cwe(opts: seq[(string, int)], cache: Table[string, CachedWeakness]): Cwe =
     ## Display the sequence of Cwe objects and let the user select one of them
@@ -38,27 +36,33 @@ proc select_cwe(opts: seq[(string, int)], cache: Table[string, CachedWeakness]):
     return cache[opts[input.parseInt()][0]].to_cwe
 
 proc main =
-    DEBUG = true
-    # var raw = request_cve_id()
-    # var info = get_cve_info(raw.format_raw_cve)
-    var cve = get_cve_info("CVE-2010-3257")
+    # DEBUG = true
+    var raw = request_cve_id()
+    var cve = get_cve_info(raw.format_raw_cve)
+    # var cve = get_cve_info("CVE-2010-3257")
     var parts = extract_keywords(cve)
-    for i in 0 .. parts.high:
-        echo i, ": ", parts[i].join(" ")
     
-    echo "Select query options, f for full descrition."
-    var query_ops: string
+    var chosen: Cwe
     while true:
-        query_ops = stdin.readLine()
-        if query_ops == "f":
-            echo cve.description
-        else:
-            break
+        for i in 0 .. parts.high:
+            echo i, ": ", parts[i].join(" ")
+        echo "Select query options, f for full descrition."
+        var query_ops: string
+        while true:
+            query_ops = stdin.readLine()
+            if query_ops == "f":
+                echo cve.description
+            else:
+                break
 
-    var cache = load_cwe_words("1000.xml")
-    let query_prep = gen_query_manual(parts, query_ops)
-    var search_res = perform_cache_search(query_prep, cache)
-    var chosen = select_cwe(search_res, cache)
+        var cache = load_cwe_words("1000.xml")
+        let query_prep = gen_query_manual(parts, query_ops)
+        var search_res = perform_cache_search(query_prep, cache)
+        try:
+            chosen = select_cwe(search_res, cache)
+            break
+        except ChangeQuery:
+            discard
     update_data(cve, chosen)
     echo "Saved Cve (", cve.id, ") -> Cwe mapping"
 
