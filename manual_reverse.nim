@@ -1,5 +1,8 @@
 import reverse_utils
 import std/[strutils, tables, algorithm]
+import cligen
+
+let CACHE = load_cwe_words("1000.cache")
 
 proc gen_query_manual(data: ExtractedWords, query_opts: string): string =
     ## Turn input + keyword data into a human query
@@ -18,28 +21,62 @@ proc gen_query_manual(data: ExtractedWords, query_opts: string): string =
 
     return result
 
-proc perform_cache_search(query: string, cache: Table[string, CachedWeakness]): seq[(string, int)] =
-    score_top_matches(ExtractedWords(@[@[query]]), cache, 6).reversed()
+proc perform_cache_search(query: string): seq[(string, int)] =
+    score_top_matches(ExtractedWords(@[@[query]]), CACHE, 6).reversed()
 
-proc select_cwe(opts: seq[(string, int)], cache: Table[string, CachedWeakness]): Cwe =
-    ## Display the sequence of Cwe objects and let the user select one of them
+proc echo(nodes: seq[CweNode], offset: int = 0) =
+    for a in nodes:
+        echo ">".repeat(offset), " {", a.id, "}: ", CACHE[a.id].name
+        echo a.children, offset + 1
 
+proc print_cwe_options(opts: seq[(string, int)]) =
+
+    # let within = 2
+
+    # var top_score = 0
+    # for a in opts:
+    #     top_score = max(top_score, a[1])
+    
+    # var score_collections: seq[CweNode]
+    # for a in opts:
+    #     if top_score - a[1] <= within:
+    #         score_collections.add(build_cwe_node(a[0], CACHE))
+    # var merged = merge_cwe_nodes(score_collections)
+
+    # echo score_collections
+    # echo " -> -> -> "
+    # echo merged
+    
     echo "Select one of the following, c to change query"
     for i in 0 .. opts.high:
-        let weakness = cache[opts[i][0]]
-        echo i, " {s=", opts[i][1], "}: ", weakness.name
+        let weakness = CACHE[opts[i][0]]
+        echo i, " [s=", opts[i][1], "]: {", weakness.id, "} ",  weakness.name
         echo "   ", weakness.description
+
+proc select_cwe(opts: seq[(string, int)]): Cwe =
+    ## Display the sequence of Cwe objects and let the user select one of them
+
+    print_cwe_options(opts)
     var input = stdin.readLine()
     # By using an exception here we can catch easily catch it outside of this function
     if input == "c":
         raise ChangeQuery()
-    return cache[opts[input.parseInt()][0]].to_cwe
+    return CACHE[opts[input.parseInt()][0]].to_cwe
 
-proc main =
-    # DEBUG = true
-    var raw = request_cve_id()
-    var cve = get_cve_info(raw.format_raw_cve)
-    # var cve = get_cve_info("CVE-2010-3257")
+proc test =
+    var cache = load_cwe_words("1000.xml")
+    let cve_text = "CVE-2007-2759"
+    var cve = get_cve_info(cve_text)
+    var chosen = "multiple sql injection vulnerabilities"
+    print_cwe_options(perform_cache_search(chosen))
+
+proc manual_reverse(c: seq[string]) =
+    var cve: Cve
+    if c.len == 0:
+        var raw = request_cve_id()
+        cve = get_cve_info(raw.format_raw_cve)
+    else:
+        cve = get_cve_info(c[0])
     var parts = extract_keywords(cve)
     
     var chosen: Cwe
@@ -55,16 +92,16 @@ proc main =
             else:
                 break
 
-        var cache = load_cwe_words("1000.xml")
+        # var cache = load_cwe_words("1000.xml")
         let query_prep = gen_query_manual(parts, query_ops)
-        var search_res = perform_cache_search(query_prep, cache)
+        var search_res = perform_cache_search(query_prep)
         try:
-            chosen = select_cwe(search_res, cache)
+            chosen = select_cwe(search_res)
             break
         except ChangeQuery:
             discard
     update_data(cve, chosen)
     echo "Saved Cve (", cve.id, ") -> Cwe mapping"
 
-
-main()
+dispatch manual_reverse
+# test()

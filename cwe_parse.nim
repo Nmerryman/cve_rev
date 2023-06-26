@@ -18,7 +18,7 @@ type
         observed_examples*: seq[Observed_Example]
         alternative_terms*: seq[Alterantive_Term]
     Related_weakness* = object
-        cwe_id*, view_id*: string
+        cwe_id*, view_id*, nature*: string
     Consequence* = object
         scope*, impact*: seq[string]
         note*: string
@@ -43,7 +43,7 @@ proc parse_catalog*(file_path: string): Catalog =
     result.views.add(View(id: tview.attr("ID"), name: tview.attr("Name"), objective: tvobjective.innerText))
     result.views[0].members = collect:
         for a in tvmembers:
-            Related_weakness(cwe_id: a.attr("CWE_ID"), view_id: a.attr("View_ID"))
+            Related_weakness(cwe_id: a.attr("CWE_ID"), view_id: a.attr("View_ID"), nature: a.attr("Nature"))
 
     var weaknesses: seq[Weakness]
     for a in thing.findAll("Weaknesses")[0].findAll("Weakness"):
@@ -55,7 +55,7 @@ proc parse_catalog*(file_path: string): Catalog =
         temp.related_weaknesses = collect:
             for b in a.findAll("Related_Weaknesses"):
                 for c in b.findAll("Related_Weakness"):
-                    Related_weakness(cwe_id: c.attr("CWE_ID"), view_id: c.attr("View_ID"))
+                    Related_weakness(cwe_id: c.attr("CWE_ID"), view_id: c.attr("View_ID"), nature: c.attr("Nature"))
 
         temp.consequenses = collect:
             for b in a.findAll("Common_Consequences"):

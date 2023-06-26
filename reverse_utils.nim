@@ -2,6 +2,7 @@
 import std/[httpclient, strutils, json, sets, re, sequtils, strscans, os, parseutils, tables, sugar, algorithm]
 import cwe_parse
 import flatty
+import print
 
 # Types needed for collecting data
 type
@@ -24,10 +25,15 @@ type
     ChangeQuery* = ref CatchableError
     CachedWeakness* = object
         id*, name*, description*, extended_description*: string
+        child_of*: seq[string]
         con_scope*, con_impacts*: seq[string]
         con_note*: string
         alt_term*, alt_desc*: seq[string]
     ExtractedWords* = seq[seq[string]]
+    Cache* = Table[string, CachedWeakness]
+    CweNode* = ref object
+        id*: string
+        parents*, children*: seq[CweNode]
 
 # Globals
 var OUTPUT_FILE* = "cve_mapping.json"
@@ -138,30 +144,89 @@ proc parse_raw_cve*(val: string): CliCve =
 proc format_raw_cve*(val: CliCve): string =
     return val.base & "-" & $val.num    
 
-proc load_cwe_words*(file_name: string, cache_file="1000.cache"): Table[string, CachedWeakness] =
+proc load_cwe_words*(file_name: string): Table[string, CachedWeakness] =
     ## Load the data for use (takes advantage of caching because parsing the original is a bit slow)
-    if not fileExists(cache_file):
-        # Generate the data 
-        let catalog = parse_catalog(file_name)
-        for a in catalog.weaknesses:
-            var temp_weakness = CachedWeakness(id: a.id, name: a.name, description: a.description, extended_description: a.extended_description)
-            for b in a.consequenses:
-                for c in b.impact:
-                    temp_weakness.con_impacts.add(c)
-                for c in b.scope:
-                    temp_weakness.con_scope.add(c)
-                if b.note != "":
-                    temp_weakness.con_note = b.note
-            for b in a.alternative_terms:
-                if b.term != "":
-                    temp_weakness.alt_term.add(b.term)
-                if b.description != "":
-                    temp_weakness.alt_desc.add(b.description)
-            result[a.id] = temp_weakness
-        let flat = toFlatty(result)
-        writeFile(cache_file, flat)
+    const cache_file = staticRead("1000.cache")
+    result = fromFlatty(cache_file, result.typeof)
+
+proc build_cwe_node*(id: string, cache: Cache, child: CweNode = nil): CweNode =
+    result = CweNode(id: id)
+    if child != nil:
+        result.children.add(child)
+    # print(result)
+    for a in cache[id].child_of:
+        result.parents.add(build_cwe_node(a, cache, result))
+    # print result        
+
+proc id_exists(nodes: seq[CweNode], id: string): bool =
+    for a in nodes:
+        if a.id == id:
+            return true
+
+proc contains(node: CweNode, id: string): bool =
+    if node.id == id:
+        return true
+    for a in node.children:
+        if a.contains(id):
+            return true
+    return false
+
+proc get*(node: CweNode, id: string): CweNode =
+    if node.id == id:
+        return node
+    for a in node.children:
+        if a.contains(id):
+            return a.get(id)
+    return nil
+
+proc update_if_possible(root: CweNode, other: CweNode): void =
+
+    # Only need to merge childen
+    if root.parents.id_exists(other.id):
+        root.children.add(other.children)
     else:
-        result = fromFlatty(readFile(cache_file), result.typeof)
+        for a in root.children:
+            update_if_possible(a, other)
+
+proc merge_cwe_nodes*(nodes: seq[CweNode]): seq[CweNode] =
+    ## Take a sequence of input nodes and fill out the parents and merge into a single tree ending with selected nodes
+    # flattens all known nodes
+    var flat: seq[CweNode]
+    var remaining: seq[CweNode] = nodes
+    while remaining.len > 0:
+        var temp = remaining.pop()
+        remaining.add(temp.parents)
+        flat.add(temp)
+    # Debug echos
+    # echo flat.len
+    # for a in flat:
+    #     print a.id
+
+    var thing: Table[string, CweNode]
+    for a in flat:
+        var temp = thing.getOrDefault(a.id)
+        # Update temp object
+        if temp == nil:
+            temp = CweNode(id: a.id)
+            thing[a.id] = temp  # We may need to transfer parent/child info
+        # Update temp parents and chilren if we have already stored them
+        for b in a.parents:
+            if not id_exists(temp.parents, b.id) and thing.contains(b.id):
+                temp.parents.add(thing[b.id])
+                for c in temp.parents:
+                    if not id_exists(c.children, temp.id):
+                        c.children.add(temp)
+        for b in a.children:
+            if not id_exists(temp.children, b.id) and thing.contains(b.id):
+                temp.children.add(thing[b.id])
+                for c in temp.children:
+                    if not id_exists(c.parents, temp.id):
+                        c.parents.add(temp)
+            
+    for k, v in thing.pairs:
+        if v.parents.len == 0:
+            result.add(v)
+            
 
 proc score*(text: ExtractedWords, match: CachedWeakness): int =
     ## Basic matching/scoring function that tries to find number of usefull matches.
@@ -206,11 +271,11 @@ proc score*(text: ExtractedWords, match: CachedWeakness): int =
         elif a in match.alt_desc.join.toLowerAscii:
             result += alt_desc_s
 
-proc score_matches*(words: ExtractedWords, cache: Table[string, CachedWeakness]): Table[string, int] =
+proc score_matches*(words: ExtractedWords, cache: Cache): Table[string, int] =
     for k, v in cache:
         result[k] = score(words, v)
 
-proc score_top_matches*(words: ExtractedWords, cache: Table[string, CachedWeakness], limit=3): seq[(string, int)] =
+proc score_top_matches*(words: ExtractedWords, cache: Cache, limit=3): seq[(string, int)] =
     result.setLen(limit)
     var vals = score_matches(words, cache)
     for k, v in vals:
@@ -224,11 +289,16 @@ proc score_top_matches*(words: ExtractedWords, cache: Table[string, CachedWeakne
 
 proc testing_main() =
     var cache = load_cwe_words("1000.xml")
-    var raw_cve = request_cve_id()
-    var cve = get_cve_info(raw_cve.format_raw_cve)
-    var extracted = extract_keywords(cve)
-    for a in score_top_matches(extracted, cache):
-        echo "[", a[0], "->", a[1], "]: ", cache[a[0]].name
+    # var raw_cve = request_cve_id()
+    # var cve = get_cve_info(raw_cve.format_raw_cve)
+    # var extracted = extract_keywords(cve)
+    # for a in score_top_matches(extracted, cache):
+    #     echo "[", a[0], "->", a[1], "]: ", cache[a[0]].name
+    var val = build_cwe_node("360", cache)
+    # print val
+    var temp = @[val, build_cwe_node("354", cache)]
+    for a in merge_cwe_nodes(temp):
+        print a
 
 
 # proc cve_rev(test=false, debug=false, iterations=1, cve="", autoincrement=false, output="mapping.json", smart=false) =
@@ -267,6 +337,7 @@ proc testing_main() =
 
 # import cligen
 
-# testing_main()
+if isMainModule:
+    testing_main()
 
 # dispatch cve_rev
