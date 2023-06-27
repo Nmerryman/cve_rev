@@ -16,6 +16,8 @@ I have either provided the finished/compiled exe seperately or they are located 
 The program is in the `.nim` file which is compiled with the [nim programming langage](nim-lang.org). 
 I simply used the latest devel version.
 
+Some additional packages/dependencies may be needed, they can simply be added via `nimble install cligen print flatty`
+
 The command to compile is `nim c -d:release file_name.nim` and will produce `file_name.exe`.
 To build `manual_reverse`:
 - compile `build_cache.nim`
