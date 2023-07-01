@@ -1,4 +1,5 @@
 import reverse_utils
+import auto_reverse
 import std/[strutils, tables, algorithm]
 import cligen
 
@@ -26,26 +27,59 @@ proc perform_cache_search(query: string): seq[(string, int)] =
 
 proc echo(nodes: seq[CweNode], offset: int = 0) =
     for a in nodes:
-        echo ">".repeat(offset), " {", a.id, "}: ", CACHE[a.id].name
+        echo "|".repeat(offset), " {", a.id, "}: ", CACHE[a.id].name
         echo a.children, offset + 1
 
-proc print_cwe_options(opts: seq[(string, int)]) =
+proc echo_tree(nodes: seq[CweNode], query: string, stored: Table[string,int], offset: int = 0) =
+    for a in nodes:
+        var spacing = ""
+        if stored[a.id] < 10:
+            spacing = " "
+        var score = score(@[@[query]], CACHE[a.id])
+        var score_spacing = "  "
+        if score >= 100:
+            score_spacing = ""
+        elif score < 100 and score >= 10:
+            score_spacing = " "
+        echo "(", spacing, stored[a.id], ") ", "[s=", score_spacing, score, "] ", "|".repeat(offset), " {", a.id, "}: ", CACHE[a.id].name
+        echo_tree a.children, query, stored, offset + 1
 
-    # let within = 2
+proc build_cwe_options(scores: seq[(string, int)]): seq[(int, string, int)] = # (choice_num, id, tabs)
+    # First we build the tree
 
-    # var top_score = 0
-    # for a in opts:
-    #     top_score = max(top_score, a[1])
+    # (id, choice_num)
+    var stored: Table[string, int]
+
+    let within = 2
+
+    var top_score = 0
+    for a in scores:
+        top_score = max(top_score, a[1])
     
-    # var score_collections: seq[CweNode]
-    # for a in opts:
-    #     if top_score - a[1] <= within:
-    #         score_collections.add(build_cwe_node(a[0], CACHE))
-    # var merged = merge_cwe_nodes(score_collections)
+    var score_collections: seq[CweNode]
+    for a in scores:
+        if top_score - a[1] <= within:
+            score_collections.add(build_cwe_node(a[0], CACHE))
+    var merged = merge_cwe_nodes(score_collections)
 
     # echo score_collections
     # echo " -> -> -> "
-    # echo merged
+    echo merged
+    var merged_copy = merged
+    var temp: seq[CweNode]
+    while merged_copy.len > 0:
+        for a in merged_copy:
+            if a.id notin stored:
+                stored[a.id] = stored.len
+                temp.add(a.children)
+        merged_copy = temp
+        temp.setLen(0)
+    echo stored
+
+
+proc print_cwe_options_old(query: string) =
+    var opts = perform_cache_search(query)
+    discard build_cwe_options(opts)
     
     echo "Select one of the following, c to change query"
     for i in 0 .. opts.high:
@@ -53,10 +87,89 @@ proc print_cwe_options(opts: seq[(string, int)]) =
         echo i, " [s=", opts[i][1], "]: {", weakness.id, "} ",  weakness.name
         echo "   ", weakness.description
 
+proc print_cwe_options(query: string): Table[string, int] =
+    # We will make sure to return stuff later
+
+    var scores = perform_cache_search(query)
+    
+    # First we build the tree
+
+    # (id, choice_num)
+    var stored: Table[string, int]
+
+    let within = 3
+
+    var top_score = 0
+    for a in scores:
+        top_score = max(top_score, a[1])
+    
+    var score_collections: seq[CweNode]
+    for a in scores:
+        if top_score - a[1] <= within:
+            score_collections.add(build_cwe_node(a[0], CACHE))
+    var merged = merge_cwe_nodes(score_collections)
+
+    # echo score_collections
+    # echo " -> -> -> "
+    # echo_tree merged, query
+    var merged_copy = merged
+    var temp: seq[CweNode]
+    while merged_copy.len > 0:
+        for a in merged_copy:
+            if a.id notin stored:
+                stored[a.id] = stored.len
+                temp.add(a.children)
+        merged_copy = temp
+        temp.setLen(0)
+    echo "(chose), [score], {cwe id}: Title"
+    echo_tree merged, query, stored
+    # echo stored
+    for a in scores:
+        if a[0] notin stored:
+            stored[a[0]] = stored.len
+            var num_spacing = ""
+            if stored[a[0]] < 10:
+                num_spacing = " "
+            var score_spacing = "  "
+            if a[1] > 100:
+                score_spacing = ""
+            elif a[1] >= 9 and a[1] < 100:
+                score_spacing = " "
+
+            echo "(", num_spacing, stored[a[0]], ") ", "[s=", score_spacing, a[1], "] {", a[0], "}: ", CACHE[a[0]].name
+    
+    echo "---"
+    echo "Recomended by algorithm (top is best)"
+    for id, s in suggest_top(query).items:
+        var score_spacing = "  "
+        if s > 100:
+            score_spacing = ""
+        elif s >= 9 and s < 100:
+            score_spacing = " "
+        echo "(", stored[id], ") ", "[s=", score_spacing, s, "] {", id, "} : ", CACHE[id].name
+
+    return stored
+
+proc new_select_cwe(query: string): Cwe =
+    var opts = print_cwe_options(query)
+    echo "Choose option:"
+    var input = stdin.readLine()
+    # By using an exception here we can catch easily catch it outside of this function
+    if input == "c":
+        raise ChangeQuery()
+    
+    var val = input.parseInt()
+    for k, v in opts:
+        if val == v:
+            return CACHE[k].to_cwe
+        
+    # return CACHE[opts[input.parseInt()][0]].to_cwe
+            
+
 proc select_cwe(opts: seq[(string, int)]): Cwe =
     ## Display the sequence of Cwe objects and let the user select one of them
 
-    print_cwe_options(opts)
+    # discard print_cwe_options(opts)
     var input = stdin.readLine()
     # By using an exception here we can catch easily catch it outside of this function
     if input == "c":
@@ -67,8 +180,8 @@ proc test =
     var cache = load_cwe_words("1000.xml")
     let cve_text = "CVE-2007-2759"
     var cve = get_cve_info(cve_text)
-    var chosen = "multiple sql injection vulnerabilities"
-    print_cwe_options(perform_cache_search(chosen))
+    var chosen = "multiple target over injection vulnerabilities"
+    echo  new_select_cwe(chosen)
 
 proc manual_reverse(c: seq[string]) =
     var cve: Cve
@@ -92,11 +205,10 @@ proc manual_reverse(c: seq[string]) =
             else:
                 break
 
-        # var cache = load_cwe_words("1000.xml")
         let query_prep = gen_query_manual(parts, query_ops)
         var search_res = perform_cache_search(query_prep)
         try:
-            chosen = select_cwe(search_res)
+            chosen = new_select_cwe(query_prep)
             break
         except ChangeQuery:
             discard

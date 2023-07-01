@@ -62,7 +62,7 @@ proc extract_keywords*(text: Cve): ExtractedWords =
     # Some (growing) criteria to check words against
     let blacklist_common = toHashSet(["a", "and", "as", "in", "to", "or", "of", "via", "used", "before",
     "after", "cause", "allows", "do", "when", "the", "has", "been", "which", "that", "from", "an"])
-    let whitelist_names = toHashSet(["SQL", "PHP"])
+    let whitelist_names = toHashSet(["SQL", "PHP", "HTTP", "HTTPS"])
     let remove_chars = {'(', ')', '"', ',', '.'}
 
     var temp: seq[string]
@@ -163,7 +163,7 @@ proc id_exists(nodes: seq[CweNode], id: string): bool =
         if a.id == id:
             return true
 
-proc contains(node: CweNode, id: string): bool =
+proc contains*(node: CweNode, id: string): bool =
     if node.id == id:
         return true
     for a in node.children:
