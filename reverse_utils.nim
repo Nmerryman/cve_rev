@@ -286,7 +286,7 @@ proc score*(text: ExtractedWords, match: CachedWeakness): int =
 
 
     # Scoring impact
-    let name_s = 7
+    let name_s = 9
     let description_s = 4
     let extended_desc_s = 2
     let con_scope_s = 1
@@ -332,17 +332,18 @@ proc score_top_matches*(words: ExtractedWords, cache: Cache, limit=3): seq[(stri
     result = result.sortedByIt(it[1])
 
 proc testing_main() =
-    var cache = load_cwe_words("1000.xml")
-    # var raw_cve = request_cve_id()
-    # var cve = get_cve_info(raw_cve.format_raw_cve)
-    # var extracted = extract_keywords(cve)
-    # for a in score_top_matches(extracted, cache):
-    #     echo "[", a[0], "->", a[1], "]: ", cache[a[0]].name
-    var val = build_cwe_node("360", cache)
-    # print val
-    var temp = @[val, build_cwe_node("354", cache)]
-    for a in merge_cwe_nodes(temp):
-        print a
+    # var cache = load_cwe_words("1000.xml")
+    # # var raw_cve = request_cve_id()
+    # # var cve = get_cve_info(raw_cve.format_raw_cve)
+    # # var extracted = extract_keywords(cve)
+    # # for a in score_top_matches(extracted, cache):
+    # #     echo "[", a[0], "->", a[1], "]: ", cache[a[0]].name
+    # var val = build_cwe_node("360", cache)
+    # # print val
+    # var temp = @[val, build_cwe_node("354", cache)]
+    # for a in merge_cwe_nodes(temp):
+    #     print a
+    echo extract_keywords_spacy(get_cve_info("CVE-2007-2758"))
 
 
 # proc cve_rev(test=false, debug=false, iterations=1, cve="", autoincrement=false, output="mapping.json", smart=false) =
