@@ -23,7 +23,7 @@ proc gen_query_manual(data: ExtractedWords, query_opts: string): string =
     return result
 
 proc perform_cache_search(query: string): seq[(string, int)] =
-    score_top_matches(ExtractedWords(@[@[query]]), CACHE, 6).reversed()
+    score_top_matches(query, CACHE, 6).reversed()
 
 proc echo(nodes: seq[CweNode], offset: int = 0) =
     for a in nodes:
@@ -35,7 +35,7 @@ proc echo_tree(nodes: seq[CweNode], query: string, stored: Table[string,int], of
         var spacing = ""
         if stored[a.id] < 10:
             spacing = " "
-        var score = score(@[@[query]], CACHE[a.id])
+        var score = score(query, CACHE[a.id])
         var score_spacing = "  "
         if score >= 100:
             score_spacing = ""
@@ -88,7 +88,6 @@ proc print_cwe_options_old(query: string) =
         echo "   ", weakness.description
 
 proc print_cwe_options(query: string): Table[string, int] =
-    # We will make sure to return stuff later
 
     var scores = perform_cache_search(query)
     

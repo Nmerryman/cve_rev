@@ -266,6 +266,9 @@ proc merge_cwe_nodes*(nodes: seq[CweNode]): seq[CweNode] =
             result.add(v)
             
 
+proc score*(text: string, match: CachedWeakness): int =
+    score(@[@[text]], match)
+
 proc score*(text: ExtractedWords, match: CachedWeakness): int =
     ## Basic matching/scoring function that tries to find number of usefull matches.
     ## I should probably move the .toLowerAscii calls to the cache storage instead
@@ -312,6 +315,9 @@ proc score*(text: ExtractedWords, match: CachedWeakness): int =
 proc score_matches*(words: ExtractedWords, cache: Cache): Table[string, int] =
     for k, v in cache:
         result[k] = score(words, v)
+
+proc score_top_matches*(words: string, cache: Cache, limit=3): seq[(string, int)] =
+    score_top_matches(@[@[words]], cache, limit)
 
 proc score_top_matches*(words: ExtractedWords, cache: Cache, limit=3): seq[(string, int)] =
     result.setLen(limit)
