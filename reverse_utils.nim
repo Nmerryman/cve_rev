@@ -1,6 +1,6 @@
 {.experimental: "codeReordering".}
 import std/[httpclient, strutils, json, sets, re, sequtils, strscans, os, parseutils, tables, sugar, algorithm]
-import cwe_parse
+import cwe_parse, spacy_interface
 import flatty
 import print
 
@@ -40,6 +40,14 @@ var OUTPUT_FILE* = "cve_mapping.json"
 var DEBUG* = false
 var DEBUG_STATE: seq[string]
 
+var spacy_lang: Language
+var GENERATED_SPACY_LANG = false
+
+proc get_lang: Language =
+    if not GENERATED_SPACY_LANG:
+        spacy_lang = load()
+    spacy_lang
+
 proc get_cve_info*(cve_val: string): Cve =
     ## Get basic CVE info based on the id
     
@@ -54,11 +62,41 @@ proc get_cve_info*(cve_val: string): Cve =
     let json_obj = parseJson(response)
     return Cve(id: cve_val, description: json_obj["containers"]["cna"]["descriptions"][0]["value"].getStr())
 
+proc extract_keywords_spacy*(text: Cve): string =
+    var temp: seq[string]
+    let parts = get_lang().parse(text.description)
+    var last_is_punct = true
+    for a in parts:
+        if a.pos == "PUNCT":
+            last_is_punct = true
+            if DEBUG:
+                echo "Removed via PUNCT:   ", a.text
+            continue
+        if a.pos == "PRON" or a.tag == "DT":
+            if DEBUG:
+                echo "Removed via PRON:    ", a.text
+            continue
+        if a.shape == "x" or a.shape == "xx" or "d" in a.shape:
+            if DEBUG:
+                echo "Removed via shape x: ", a.text
+            continue
+        if a.shape.len > 2 and (a.shape[0..1] == "Xx"):
+            if not last_is_punct:
+                if DEBUG:
+                    echo "Removed via caps:     ", a.text
+                continue
+
+        temp.add(a.lemma.toLowerAscii)
+        last_is_punct = false
+        echo a
+    
+    join(temp.deduplicate, " ")
+
 proc extract_keywords*(text: Cve): ExtractedWords =
     ## Remove rarely important words and nouns that usually have nothing to do with the weakness itself
     ## Organized so that runs of big words are kept together
     ## Basically this is a first round of preprocessing
-    
+
     # Some (growing) criteria to check words against
     let blacklist_common = toHashSet(["a", "and", "as", "in", "to", "or", "of", "via", "used", "before",
     "after", "cause", "allows", "do", "when", "the", "has", "been", "which", "that", "from", "an"])
