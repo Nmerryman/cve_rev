@@ -23,6 +23,17 @@ proc smart_query(vals: ExtractedWords): string =
     return passed.join
 
 
+proc echo_tree(nodes: seq[CweNode], query: string, offset: int = 0) =
+    for a in nodes:
+        var score = score(query, CACHE[a.id])
+        var score_spacing = "  "
+        if score >= 100:
+            score_spacing = ""
+        elif score < 100 and score >= 10:
+            score_spacing = " "
+        echo "[s=", score_spacing, score, "] ", "|".repeat(offset), " {", a.id, "}: ", CACHE[a.id].name
+        echo_tree a.children, query, offset + 1
+
 proc select_similar_score(scores: seq[(string, int)]): seq[string] =
     const sys = "discrete"
     
@@ -47,9 +58,19 @@ proc select_similar_score(scores: seq[(string, int)]): seq[string] =
             if a[1].float > temp_max.float * (1 - within):
                 result.add(a[0])
 
-proc suggest_top*(query: string): seq[(string, int)] =
+proc echo_scores(data: seq[(string, int)]) =
+    for (i, s) in data:
+        var spacing = ""
+        if i.len < 3:
+            spacing = " "
+        echo "{", spacing, i, "} [s=", s, "]: ", CACHE[i].name
 
-    var scores = score_top_matches(ExtractedWords(@[@[query]]), CACHE, 10).reversed()
+proc suggest_top*(query: string): seq[(string, int)] =
+    ## We should probably do something smarter for when we have multiple final parents after gettin to roots of tree
+    ## (id, score)
+
+    var scores = score_top_matches(query, CACHE, 10).reversed()
+    echo_scores scores
     
     # We basically have a guarentee that it's already order from large to small
     var top_options = select_similar_score(scores)
@@ -60,6 +81,8 @@ proc suggest_top*(query: string): seq[(string, int)] =
     for a in top_options:
         score_collections.add(build_cwe_node(a, CACHE))
     var merged = merge_cwe_nodes(score_collections)
+
+    echo_tree merged, query
 
     #  Find best scoring node
     var current_best: CweNode
@@ -91,5 +114,13 @@ proc suggest_top*(query: string): seq[(string, int)] =
             break        
 
     for a in best_seq.reversed():
-        result.add((a, score(@[@[query]], CACHE[a])))
+        result.add((a, score(query, CACHE[a])))
 
+proc test =
+    let test_cve = "CVE-2007-2759"
+    let query = extract_keywords_spacy(get_cve_info(test_cve))
+    echo query
+    echo_scores suggest_top("SQL")
+
+
+test()
