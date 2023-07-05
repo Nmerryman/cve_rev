@@ -312,8 +312,8 @@ proc score*(text: ExtractedWords, match: CachedWeakness): int =
     let alt_desc_s = 2
     for a in prep:
         if a in match.name.toLowerAscii:
-            if match.id == "451":
-                echo a
+            # if match.id == "451":
+            #     echo a
             result += name_s
         elif a in match.description.toLowerAscii:
             result += description_s

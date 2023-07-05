@@ -210,6 +210,7 @@ proc manual_reverse(c: seq[string]) =
             chosen = new_select_cwe(query_prep)
             break
         except ChangeQuery:
+            echo "hit exception"
             discard
     update_data(cve, chosen)
     echo "Saved Cve (", cve.id, ") -> Cwe mapping"

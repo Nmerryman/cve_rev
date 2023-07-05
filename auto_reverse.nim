@@ -168,4 +168,5 @@ proc test =
     echo_scores suggest_top(query)
 
 
-test()
+if isMainModule:
+    test()
