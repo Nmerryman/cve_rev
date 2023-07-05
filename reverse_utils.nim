@@ -209,6 +209,21 @@ proc contains*(node: CweNode, id: string): bool =
             return true
     return false
 
+proc contains_many*(node: CweNode, ids: seq[string]): bool =
+    result = true
+    for a in ids:
+        if a notin node:
+            result = false
+
+proc get_contains_many*(node: CweNode, ids: seq[string]): CweNode =
+    var amount = 0
+    for a in node.children:
+        if contains_many(a, ids):
+            amount += 1
+            result = get_contains_many(a, ids)
+    if amount != 1:
+        return node
+
 proc get*(node: CweNode, id: string): CweNode =
     if node.id == id:
         return node
@@ -284,9 +299,10 @@ proc score*(text: ExtractedWords, match: CachedWeakness): int =
         echo prep
         DEBUG_STATE.add("score temp")
 
+    # I NEED TO LEMMA THE PREP WORDS
 
     # Scoring impact
-    let name_s = 9
+    let name_s = 15
     let description_s = 4
     let extended_desc_s = 2
     let con_scope_s = 1
