@@ -19,7 +19,7 @@ proc main =
     let catalog = parse_catalog(file_name)
     var cache_data: Cache
     for a in catalog.weaknesses:
-        var temp_weakness = CachedWeakness(id: a.id, name: a.name.clean, description: a.description.clean, extended_description: a.extended_description.clean)
+        var temp_weakness = CachedWeakness(id: a.id, name: a.name, description: a.description.clean, extended_description: a.extended_description.clean)
         for b in a.related_weaknesses:
             # We are only checking for current view weaknesses (1000)
             if b.view_id == "1000" and b.nature == "ChildOf":

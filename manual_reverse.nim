@@ -89,6 +89,8 @@ proc print_cwe_options_old(query: string) =
 
 proc print_cwe_options(query: string): Table[string, int] =
 
+    echo "Query -> ", query
+
     var scores = perform_cache_search(query)
     
     # First we build the tree
@@ -156,6 +158,8 @@ proc new_select_cwe(query: string): Cwe =
     # By using an exception here we can catch easily catch it outside of this function
     if input == "c":
         raise ChangeQuery()
+    if input == "skip":
+        raise SkipOption()
     
     var val = input.parseInt()
     for k, v in opts:
@@ -173,6 +177,8 @@ proc select_cwe(opts: seq[(string, int)]): Cwe =
     # By using an exception here we can catch easily catch it outside of this function
     if input == "c":
         raise ChangeQuery()
+    elif input == "skip":
+        raise SkipOption()
     return CACHE[opts[input.parseInt()][0]].to_cwe
 
 proc test =

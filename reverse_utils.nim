@@ -19,10 +19,11 @@ type
         link*: string
     Cve2Cwe* = object
         cve*: Cve
-        cwe*: Cwe
+        cwe*: seq[Cwe]
     DataCollection* = object
         data*: seq[Cve2Cwe]
-    ChangeQuery* = ref CatchableError
+    ChangeQuery* = ref object of CatchableError
+    SkipOption* = ref object of CatchableError
     CachedWeakness* = object
         id*, name*, description*, extended_description*: string
         child_of*: seq[string]
@@ -100,7 +101,7 @@ proc extract_keywords*(text: Cve): ExtractedWords =
     # Some (growing) criteria to check words against
     let blacklist_common = toHashSet(["a", "and", "as", "in", "to", "or", "of", "via", "used", "before",
     "after", "cause", "allows", "do", "when", "the", "has", "been", "which", "that", "from", "an"])
-    let whitelist_names = toHashSet(["SQL", "PHP", "HTTP", "HTTPS"])
+    let whitelist_names = toHashSet(["SQL", "PHP", "HTTP", "HTTPS", "NULL", "TCP", "UDP", "URL"])
     let remove_chars = {'(', ')', '"', ',', '.'}
 
     var temp: seq[string]
@@ -147,7 +148,7 @@ proc extract_keywords*(text: Cve): ExtractedWords =
 proc to_cwe*(cwe: CachedWeakness): Cwe =
     Cwe(id: cwe.id, name: cwe.name, description: cwe.description, link: "https://cwe.mitre.org/data/definitions/" & $cwe.id & ".html")
 
-proc update_data*(cve: Cve, cwe: Cwe) =
+proc update_data*(cve: Cve, cwe: seq[Cwe]) =
     ## Store the decision in a local file but try to be context aware
 
     # Get global value
@@ -346,8 +347,14 @@ proc score_top_matches*(words: ExtractedWords, cache: Cache, limit=3): seq[(stri
                 if v > a[1]:
                     a = (k, v)
                     break result_iter
+            
+    # Remove any empty spaces
+    var temp: seq[(string, int)]
+    for (i, s) in result:
+        if i != "":
+            temp.add((i, s))
     
-    result = result.sortedByIt(it[1])
+    result = temp.sortedByIt(it[1])
 
 proc testing_main() =
     # var cache = load_cwe_words("1000.xml")

@@ -71,6 +71,7 @@ proc suggest_top*(query: string): seq[(string, int)] =
 
     # Get starting matches
     var scores = score_top_matches(query, CACHE, 10).reversed()
+    print scores
     echo_scores scores
     
     # Select top few results
@@ -98,6 +99,10 @@ proc suggest_top*(query: string): seq[(string, int)] =
             best_parent_score = parent_score
             current_best_parent = a
         
+    # FIXME: Current issues to look at
+    #   Sometimes when there is only one top node but it has 2 parent, we still go up 2 steps even though we zoomed in on only one candidate.
+    #   It is possible for the query to return too many identically scored results (such as when searching "multiple buffer overflows") so that we may loose the ones we're looking for
+    #   Using "multiple cross-site scripting xss vulnerabilities" as a query seems to exclude the correct target despite being within the percent threshold
     
     # Get all top children that are in best parent
     var new_top: seq[string]
@@ -162,7 +167,7 @@ proc suggest_top*(query: string): seq[(string, int)] =
     #     result.add((a, score(query, CACHE[a])))
 
 proc test =
-    let test_cve = "CVE-2007-2756"
+    let test_cve = "CVE-2007-2755"
     let query = extract_keywords_spacy(get_cve_info(test_cve))
     echo query
     echo_scores suggest_top(query)
