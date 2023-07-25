@@ -1,6 +1,6 @@
 import flatty
 import cwe_parse, reverse_utils, spacy_interface
-import std/[tables, strutils]
+import std/[tables, strutils, json]
 
 let lang = load()
 
@@ -14,8 +14,8 @@ proc clean(text: string): string =
 
 proc main =
     # Generate the data 
-    let file_name = "1000.xml"
-    let cache_name = "1000.cache"
+    let file_name = "cwec_v4.12.xml"
+    let cache_name = "cwec.cache"
     let catalog = parse_catalog(file_name)
     var cache_data: Cache
     for a in catalog.weaknesses:
@@ -39,5 +39,10 @@ proc main =
         cache_data[a.id] = temp_weakness
     let flat = toFlatty(cache_data)
     writeFile(cache_name, flat)
+
+    # Also extract mappings
+    var mapping = extract_mapping(catalog)
+    writeFile("site_mappings.json", pretty(%*(mapping)))
+
 
 main()

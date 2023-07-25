@@ -1,6 +1,6 @@
 {.experimental: "codeReordering".}
 import std/[httpclient, strutils, json, sets, re, sequtils, strscans, os, parseutils, tables, sugar, algorithm]
-import cwe_parse, spacy_interface
+import spacy_interface
 import flatty
 import print
 
@@ -185,7 +185,8 @@ proc format_raw_cve*(val: CliCve): string =
 
 proc load_cwe_words*(file_name: string): Table[string, CachedWeakness] =
     ## Load the data for use (takes advantage of caching because parsing the original is a bit slow)
-    const cache_file = staticRead("1000.cache")
+    ## FIXME this is hardcoded which is probably quite bad lol
+    const cache_file = staticRead("cwec.cache")
     result = fromFlatty(cache_file, result.typeof)
 
 proc build_cwe_node*(id: string, cache: Cache, child: CweNode = nil): CweNode =

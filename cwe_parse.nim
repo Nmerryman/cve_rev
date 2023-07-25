@@ -1,6 +1,7 @@
 {.experimental: "codeReordering".}
 import std/[xmltree, xmlparser, strtabs, sugar]
 import print
+import reverse_utils
 
 type
     Catalog* = object
@@ -17,6 +18,9 @@ type
         mitigations*: seq[Mitigation]
         observed_examples*: seq[Observed_Example]
         alternative_terms*: seq[Alterantive_Term]
+        mapping_usage*: string
+        mapping_rationale*: string
+        mapping_comments*: string
     Related_weakness* = object
         cwe_id*, view_id*, nature*: string
     Consequence* = object
@@ -100,9 +104,22 @@ proc parse_catalog*(file_path: string): Catalog =
                         temp_term.description = c.findAll("Description")[0].innerText
                     temp_term
 
+        temp.mapping_usage = a.findAll("Mapping_Notes")[0].findAll("Usage")[0].innerText
+        temp.mapping_rationale = a.findAll("Mapping_Notes")[0].findAll("Rationale")[0].innerText
+        temp.mapping_comments = a.findAll("Mapping_Notes")[0].findAll("Comments")[0].innerText
+
         weaknesses.add(temp)
 
     result.weaknesses = weaknesses
+
+proc extract_mapping*(c: Catalog): DataCollection =
+
+    var data: DataCollection
+    for a in c.weaknesses:
+        for b in a.observed_examples:
+            data.data.add(Cve2Cwe(cve: Cve(id: b.reference, description: b.description), cwe: @[Cwe(id: a.id, name: a.name, description: a.description, link: "https://cwe.mitre.org/data/definitions/" & a.id & ".html")]))
+
+    return data
 
 proc find*(c: Catalog, id: string): Weakness =
     for a in c.weaknesses:
@@ -113,8 +130,9 @@ proc find*(c: Catalog, id: int): Weakness =
     find(c, $id)
 
 proc main =
-    let cat = parse_catalog("src/1000.xml")
+    let cat = parse_catalog("cwec_v4.12.xml")
     print(cat.find(1004))
+
 
 if isMainModule:
     main()
