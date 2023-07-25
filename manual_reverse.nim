@@ -1,6 +1,6 @@
 import reverse_utils
 import auto_reverse
-import std/[strutils, tables, algorithm]
+import std/[strutils, tables, algorithm, sequtils]
 import cligen
 
 let CACHE = load_cwe_words("1000.cache")
@@ -151,7 +151,7 @@ proc print_cwe_options(query: string): Table[string, int] =
 
     return stored
 
-proc new_select_cwe(query: string): Cwe =
+proc new_select_cwe(query: string): seq[Cwe] =
     var opts = print_cwe_options(query)
     echo "Choose option:"
     var input = stdin.readLine()
@@ -161,12 +161,12 @@ proc new_select_cwe(query: string): Cwe =
     if input == "skip":
         raise SkipOption()
     
-    var val = input.parseInt()
-    for k, v in opts:
-        if val == v:
-            return CACHE[k].to_cwe
+    var val = input.split(" ").map(parseInt)
+    for a in val:
+        for k, v in opts:
+            if a == v:
+                result.add(CACHE[k].to_cwe)
         
-    # return CACHE[opts[input.parseInt()][0]].to_cwe
             
 
 proc select_cwe(opts: seq[(string, int)]): Cwe =

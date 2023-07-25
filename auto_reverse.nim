@@ -103,6 +103,9 @@ proc suggest_top*(query: string): seq[(string, int)] =
     #   Sometimes when there is only one top node but it has 2 parent, we still go up 2 steps even though we zoomed in on only one candidate.
     #   It is possible for the query to return too many identically scored results (such as when searching "multiple buffer overflows") so that we may loose the ones we're looking for
     #   Using "multiple cross-site scripting xss vulnerabilities" as a query seems to exclude the correct target despite being within the percent threshold
+
+    # Change the mapping to CVE -> seq[CWE] instead
+    # Include allow level in CachedCWE
     
     # Get all top children that are in best parent
     var new_top: seq[string]
